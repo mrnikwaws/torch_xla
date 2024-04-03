@@ -45,6 +45,10 @@ class PjRtComputationClient : public ComputationClient {
   std::vector<xla::Literal> TransferFromServer(
       absl::Span<const DataPtr> handles) override;
 
+  void TransferFromServer(
+      absl::Span<const DataPtr> handles,
+      absl::Span<std::shared_ptr<TensorDestination>> tensors) override;
+
   DataPtr TransferShardsToServer(
       absl::Span<const std::shared_ptr<const TensorSource>> tensor_shards,
       std::string device, xla::Shape shape, xla::OpSharding sharding) override;

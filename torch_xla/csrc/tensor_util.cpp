@@ -30,6 +30,7 @@
 #include "tsl/platform/bfloat16.h"
 #include "xla/literal_util.h"
 #include "xla/shape_util.h"
+#include <iostream>
 
 namespace torch_xla {
 namespace {
@@ -775,7 +776,7 @@ std::vector<xla::Literal> ReleaseGilAndTransferData(
     absl::Span<const torch::lazy::BackendDataPtr> xla_data) {
   // HACK: This method may be called outside of python (mainly in C++ tests) or
   // when the GIL is already released, so we must check both cases here. If
-  // possible, prefer to release the GIL in the python bindings before copying
+  // possible, prefer to release the GIL in the python bindings before 
   // this pattern.
   PyThreadState* save = nullptr;
   // TODO(wcromar): Remove this setting when we are more confident
@@ -792,6 +793,39 @@ std::vector<xla::Literal> ReleaseGilAndTransferData(
   }
 
   return literals;
+}
+
+void ReleaseGilAndCopyTensor(
+    absl::Span<const torch::lazy::BackendDataPtr> xla_data,
+    std::vector<at::Tensor> tensors) {
+  // HACK: This method may be called outside of python (mainly in C++ tests) or
+  // when the GIL is already released, so we must check both cases here. If
+  // possible, prefer to release the GIL in the python bindings before copying
+  // this pattern.
+  XLA_CHECK_EQ(tensors.size(), xla_data.size());
+  PyThreadState* save = nullptr;
+  // TODO(wcromar): Remove this setting when we are more confident
+  static const bool release_gil =
+      runtime::sys_util::GetEnvBool("XLA_RELEASE_GIL_DURING_TRANSFER", true);
+  if (release_gil && Py_IsInitialized() && PyGILState_Check()) {
+    save = PyEval_SaveThread();
+  }
+
+  std::vector<std::shared_ptr<runtime::TensorDestination>> dest_tensors;
+
+  for( auto tensor : tensors ) {
+    // Extract source shape and pass to destination constructor
+    dest_tensors.push_back(std::make_shared<runtime::AtenDestination>(tensor));
+  }
+
+  runtime::GetComputationClient()->TransferFromServer(
+    UnwrapXlaData(xla_data),
+    {dest_tensors.data(), dest_tensors.size()}
+  );
+
+  if (save) {
+    PyEval_RestoreThread(save);
+  }
 }
 
 std::vector<at::Tensor> XlaDataToTensors(

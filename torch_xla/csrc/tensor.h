@@ -180,6 +180,9 @@ class XLATensor : public torch::lazy::LazyTensor {
   // Override to use xla::shape.
   int64_t size(int64_t dim) const final;
 
+  // Copy into target tensor
+  void CopyToContiguousTensor(at::Tensor tensor);
+
   // Override to use XLAGraphExecutor.
   at::Tensor ToTensor(bool detached) final;
 

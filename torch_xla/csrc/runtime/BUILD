@@ -52,6 +52,7 @@ cc_library(
     ":metrics",
     ":sys_util",
     ":tensor_source",
+    ":tensor_destination",
     ":types",
     ":util",
     ":xla_coordinator",
@@ -314,6 +315,17 @@ cc_library(
 cc_library(
   name = "tensor_source",
   hdrs = ["tensor_source.h"],
+  deps = [
+      ":debug_macros",
+      "@xla//xla:literal",
+      "@xla//xla:shape_util",
+      "@torch//:headers",
+  ]
+)
+
+cc_library(
+  name = "tensor_destination",
+  hdrs = ["tensor_destination.h"],
   deps = [
       ":debug_macros",
       "@xla//xla:literal",

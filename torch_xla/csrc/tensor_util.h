@@ -31,6 +31,14 @@ at::Tensor MakeTensorFromXlaLiteral(const xla::Literal& literal,
 std::vector<xla::Literal> ReleaseGilAndTransferData(
     absl::Span<const torch::lazy::BackendDataPtr> xla_data);
 
+// Execution and data transfer are async in PJRT, so TransferFromDevice may
+// block until `DataPtr`s are ready. Release the GIL so other threads can
+// proceed and unblock any transfers or collective computations.
+// Copy into at::Tensor
+void ReleaseGilAndCopyTensor(
+    absl::Span<const torch::lazy::BackendDataPtr> xla_data,
+    std::vector<at::Tensor> tensors);
+
 // TODO LTC @wonjoo - Migrate to upstream after Device -> BackendDevice
 std::vector<at::Tensor> XlaDataToTensors(
     absl::Span<const torch::lazy::BackendDataPtr> xla_data,

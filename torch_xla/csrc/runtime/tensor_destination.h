@@ -1,5 +1,5 @@
-#ifndef XLA_CLIENT_TENSOR_SOURCE_H_
-#define XLA_CLIENT_TENSOR_SOURCE_H_
+#ifndef XLA_CLIENT_TENSOR_DESTINATION_H_
+#define XLA_CLIENT_TENSOR_DESTINATION_H_
 
 #include <ATen/Tensor.h>
 #include <torch/csrc/lazy/core/metrics.h>
@@ -16,11 +16,11 @@ namespace torch_xla {
 namespace runtime {
 
 // Owns a contiguous block of data with the shape and layout matching `shape()`.
-class TensorSource {
+class TensorDestination {
  public:
-  TensorSource(std::string device) : device_(std::move(device)){};
+  TensorDestination(std::string device) : device_(std::move(device)){};
 
-  virtual const void* data() const = 0;
+  virtual void* data() const = 0;
 
   virtual const xla::Shape& shape() const = 0;
 
@@ -32,6 +32,8 @@ class TensorSource {
         xla::ShapeUtil::ByteStrides(shape(), absl::MakeSpan(byte_strides)));
     return byte_strides;
   }
+
+  virtual void resize(const xla::Shape& new_shape) = 0;
 
   virtual std::vector<int64_t> dimensions() const {
     auto dimensions = shape().dimensions();
@@ -46,30 +48,43 @@ class TensorSource {
   std::string device_;
 };
 
-class AtenSource : public TensorSource {
+class AtenDestination : public TensorDestination {
  public:
-  AtenSource(const at::Tensor& tensor, xla::Shape shape, std::string device)
-      : TensorSource(std::move(device)), shape_(std::move(shape)) {
+  AtenDestination(at::Tensor tensor)
+      : TensorDestination(tensor.device().str()), 
+        shape_(xla::ShapeUtil::MakeShape(XlaTypeFromTorchType(tensor.scalar_type()),tensor.sizes())) {
     at::ScalarType target_torch_type = TorchTypeFromXlaType(primitive_type());
     if (target_torch_type != tensor.type().scalarType()) {
-      TORCH_LAZY_COUNTER("AtenSourceDowncasts", 1);
+      TORCH_LAZY_COUNTER("AtenDestinationDowncasts", 1);
     }
+
     // TODO(ysiraichi): check, first, if tensor lives in a device that the
     // current PjRt client has access. If so, we don't need to go through the
     // CPU.
-    if (tensor.is_contiguous() && 
-        tensor.is_cpu() && 
-        tensor.dtype() == target_torch_type) {
-      tensor_ = tensor;
-    } else {
-      tensor_ = std::move(
-          tensor.to(at::TensorOptions().device(at::kCPU).dtype(target_torch_type),
-                    /*non_blocking=*/false,
-                    /*copy=*/true, at::MemoryFormat::Contiguous));
-    }
+    tensor_ = std::move(
+        tensor.to(at::TensorOptions().device(at::kCPU).dtype(target_torch_type),
+                  /*non_blocking=*/false,
+                  /*copy=*/false, at::MemoryFormat::Contiguous));
   }
 
-  const void* data() const override { return tensor_.const_data_ptr(); }
+  void resize(const xla::Shape& new_shape) override {
+    // Update shape
+    shape_ = new_shape;
+
+    at::ScalarType target_torch_type = TorchTypeFromXlaType(primitive_type());
+    auto shape = new_shape.dimensions();
+
+    // Ensure type has not changed
+    tensor_ = std::move(
+      tensor_.to(at::TensorOptions().device(at::kCPU).dtype(target_torch_type),
+                /*non_blocking=*/false,
+                /*copy=*/false, at::MemoryFormat::Contiguous));    
+
+    // Resize
+    tensor_.resize_({shape.begin(),shape.end()});
+  }
+
+  void* data() const override { return tensor_.mutable_data_ptr(); }
 
   const xla::Shape& shape() const override { return shape_; }
 
@@ -87,24 +102,11 @@ class AtenSource : public TensorSource {
   }
 
  private:
-  at::Tensor tensor_;
+  mutable at::Tensor tensor_;
   xla::Shape shape_;
-};
-
-class LiteralSource : public TensorSource {
- public:
-  LiteralSource(xla::Literal literal, std::string device)
-      : TensorSource(std::move(device)), literal_(std::move(literal)) {}
-
-  const void* data() const override { return literal_.untyped_data(); }
-
-  const xla::Shape& shape() const override { return literal_.shape(); }
-
- private:
-  xla::Literal literal_;
 };
 
 }  // namespace runtime
 }  // namespace torch_xla
 
-#endif  // XLA_CLIENT_COMPUTATION_CLIENT_H_
+#endif  // XLA_CLIENT_TENSOR_DESTINATION_H_

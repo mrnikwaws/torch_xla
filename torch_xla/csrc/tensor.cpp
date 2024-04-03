@@ -460,6 +460,37 @@ XLATensorPtr XLATensor::CreateViewTensor(ViewInfo view_info) const {
   return new_tensor;
 }
 
+void XLATensor::CopyToContiguousTensor(at::Tensor tensor) {
+  XLA_CHECK(tensor.is_contiguous());
+  bool detached = !tensor.requires_grad();
+  c10::optional<at::Tensor> tensor_data = CurrentTensorData();
+  if (!tensor_data) {
+    std::vector<at::Tensor> tensors;
+    tensors.push_back(tensor);
+    XLAGraphExecutor::Get()->DeviceBarrier(GetDevice());
+    ReleaseGilAndCopyTensor(
+      {GetXlaData()},
+      {tensor});
+    if (!detached) {
+      SetTensorData(tensor);
+    }      
+  } else {
+    tensor = *tensor_data;
+    if (!detached) {
+      if (data()->ir_value || data()->handle != nullptr ||
+          data()->view != nullptr) {
+        // If we have other authoritive sources, just drop our reference and
+        // transfer it to the caller.
+        data()->tensor_data = c10::nullopt;
+      } else {
+        // Otherwise we need to make a copy to prevent the caller changing our
+        // version.
+        tensor = torch::lazy::CopyTensor(tensor);
+      }
+    }
+  }
+}
+
 at::Tensor XLATensor::ToTensor(bool detached) {
   at::Tensor tensor;
   c10::optional<at::Tensor> tensor_data = CurrentTensorData();

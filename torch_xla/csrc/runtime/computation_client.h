@@ -22,6 +22,7 @@
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/metrics.h"
 #include "torch_xla/csrc/runtime/tensor_source.h"
+#include "torch_xla/csrc/runtime/tensor_destination.h"
 #include "torch_xla/csrc/runtime/types.h"
 #include "torch_xla/csrc/runtime/util.h"
 #include "xla/client/xla_computation.h"
@@ -276,6 +277,15 @@ class ComputationClient {
   // python while holding the GIL can cause deadlocks!
   virtual std::vector<xla::Literal> TransferFromServer(
       absl::Span<const DataPtr> handles) = 0;
+
+  // Reads the tensor stored at TPU server sites, behind the supplied handles
+  // into a tensor destination
+  // Note: `TransferFromDevice` call will block until the `DataPtrs` are ready
+  // if they were created by `TransferToDevice` or `Execute*`. Calling this from
+  // python while holding the GIL can cause deadlocks!
+  virtual void TransferFromServer(
+      absl::Span<const DataPtr> handles,
+      absl::Span<std::shared_ptr<TensorDestination>> tensors){};         
 
   // Compiles a set of computations.
   virtual std::vector<ComputationPtr> Compile(

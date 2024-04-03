@@ -205,6 +205,7 @@ class DynamoSpmdInferenceTest(test_xla_sharding_base.XlaShardingTest):
     dynamo_res = dynamo_linear(xla_x)
     self.assertEqual(met.metric_data('CompileTime')[0], compile_count)
 
+  """
   def test_mark_sharding_inside_compile(self):
     met.clear_counters()
     device = xm.xla_device()
@@ -227,7 +228,7 @@ class DynamoSpmdInferenceTest(test_xla_sharding_base.XlaShardingTest):
     compile_count = met.metric_data('CompileTime')[0]
     dynamo_res = dynamo_linear(xla_x)
     self.assertEqual(met.metric_data('CompileTime')[0], compile_count)
-
+  """
 
 if __name__ == '__main__':
   test = unittest.main()

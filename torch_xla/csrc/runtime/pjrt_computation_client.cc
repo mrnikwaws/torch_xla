@@ -34,6 +34,7 @@
 #include "xla/pjrt/pjrt_executable.h"
 #include "xla/pjrt/tfrt_cpu_pjrt_client.h"
 #include "xla/shape.h"
+#include "xla/shape_util.h"
 
 using xla::internal::XlaBuilderFriend;
 
@@ -513,6 +514,54 @@ std::vector<xla::Literal> PjRtComputationClient::TransferFromServer(
   InboundDataMetric()->AddSample(total_size);
 
   return literals;
+}
+
+void PjRtComputationClient::TransferFromServer(
+    absl::Span<const DataPtr> handles,
+    absl::Span<std::shared_ptr<TensorDestination>> tensors) {
+  metrics::TimedSection timed(TransferFromServerMetric());
+  tsl::profiler::TraceMe activity("PjRtComputationClient::TransferFromServer",
+                                  tsl::profiler::TraceMeLevel::kInfo);
+  XLA_CHECK(handles.size() == tensors.size());
+
+  // Holder for async copy
+  std::vector<xla::MutableBorrowingLiteral> literals;
+  std::vector<xla::PjRtFuture<absl::Status>> futures;
+  futures.reserve(handles.size());
+
+  int64_t total_size = 0;
+  auto tensor = tensors.begin();
+  auto handle = handles.begin();
+  while (handle != handles.end() && tensor != tensors.end()) {
+    // Use XLA replication to reassemble the sharded data. If input handle
+    // is not sharded, then it is a no-op.
+    std::shared_ptr<PjRtData> pjrt_data = ReplicateShardedData(*handle);
+    XLA_CHECK(pjrt_data);
+
+    auto src_shape = host_output_shape(pjrt_data->buffer.get());
+    if (src_shape != (*tensor)->shape()) {
+      (*tensor)->resize(src_shape);
+    }
+
+    XLA_CHECK(src_shape == (*tensor)->shape());
+
+    // Construct a MutableBorrowingLiteral around the destination tensor
+    xla::MutableBorrowingLiteral& literal =
+        literals.emplace_back((char*)(*tensor)->data(), (*tensor)->shape());
+
+    futures.push_back(pjrt_data->buffer->ToLiteral(&literal));
+    total_size += literal.size_bytes();
+
+    ++handle;
+    ++tensor;
+  }
+  
+  for (auto& future : futures) {
+    absl::Status status = future.Await();
+    XLA_CHECK_OK(status);
+  }
+  
+  InboundDataMetric()->AddSample(total_size);
 }
 
 std::vector<ComputationClient::ComputationPtr> PjRtComputationClient::Compile(
