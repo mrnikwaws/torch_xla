@@ -204,10 +204,17 @@ InitializePjRt(const std::string& device_type) {
     client = std::move(xla::GetCApiClient("XPU").value());
   } else if (device_type == "NEURON") {
     TF_VLOG(1) << "Initializing PjRt NEURON client...";
-    XLA_CHECK_OK(pjrt::LoadPjrtPlugin("NEURON", sys_util::GetEnvString(
-                                                    env::kEnvNeuronLibraryPath,
-                                                    "libneuronpjrt.so"))
-                     .status());
+    auto status_or_api = pjrt::PjrtApi("NEURON");
+    XLA_CHECK_OK(status_or_api.status());
+
+    // Don't throw a cow if we already loaded the PJRT device
+    if( !status_or_api.value() ) {
+      XLA_CHECK_OK(pjrt::LoadPjrtPlugin("NEURON", sys_util::GetEnvString(
+                                                      env::kEnvNeuronLibraryPath,
+                                                      "libneuronpjrt.so"))
+                      .status());
+    }
+
     client = std::move(xla::GetCApiClient("NEURON").value());
   }
 
