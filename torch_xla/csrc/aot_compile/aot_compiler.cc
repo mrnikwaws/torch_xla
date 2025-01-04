@@ -1,24 +1,31 @@
 #include "torch_xla/csrc/aot_compile/aot_compiler.h"
 
 #include "torch_xla/csrc/runtime/tf_logging.h"
+#include "torch_xla/csrc/runtime/debug_macros.h"
+
+#include "xla/service/hlo.pb.h"
+#include "xla/hlo/builder/xla_computation.h"
+
+#include "xla/pjrt/pjrt_api.h"
+#include "xla/pjrt/pjrt_compiler.h"
 
 namespace torch_xla {
 namespace aot_compile {
 
 
-PjRtCompiler::PjRtCompiler( const std::string& device_name ) 
-    :device_name_(device_name), c_api(nullptr), compiler_(nullptr) {
+PjRtCompiler::PjRtCompiler( const std::string& device_name, const std::string& pjrt_lib_path ) 
+    :device_name_(device_name), c_api_(nullptr), compiler_(nullptr) {
         
-    XLA_CHECK( initialize(device_name) );
+    XLA_CHECK( initialize(device_name, pjrt_lib_path) );
 }
 
 bool PjRtCompiler::initialize( const std::string& device_name, const std::string& pjrt_lib_path ) {
-    auto status_or_api = pjrt::PjrtApi("NEURON");
-    XLA_CHECK_OK(status_or_api.status());
+    auto status_or_api = pjrt::PjrtApi(device_name_);
 
-    if( !status_or_api.value() ) {
-        auto status_or_plugin_loaded = pjrt::LoadPjrtPlugin(device_name, pjrt_lib_path)
-        XLA_CHECK_OK(status_or_plugin_loaded.status());
+    if( !status_or_api.ok() ) {
+        auto status_or_plugin_loaded = pjrt::LoadPjrtPlugin(device_name, pjrt_lib_path);
+        if( !status_or_plugin_loaded.ok() )
+            return false;
 
         VLOG(1) << "'" << device_name << "' plugin loaded = " << status_or_plugin_loaded.value();
 
@@ -26,29 +33,31 @@ bool PjRtCompiler::initialize( const std::string& device_name, const std::string
             return false;
         }
 
-        status_or_c_api = pjrt::PjrtApi(device_name);
+        status_or_api = pjrt::PjrtApi(device_name);
         XLA_CHECK_OK(status_or_plugin_loaded.status());
 
-        if( status_or_c_api.value() == nullptr ) {
+        if( status_or_api.value() == nullptr ) {
             return false;
         }
     }
 
-    c_api_ = status_or_c_api.value();
+    c_api_ = status_or_api.value();
 
-    xla::PjRtCApiCompiler neuron_compiler(c_api_);
-    compiler_ = std::move(std::make_unique<xla::PjRtCApiCompiler>(c_api_))
+    compiler_ = std::make_unique<xla::PjRtCApiCompiler>(c_api_);
 
     return true;
 }
 
 std::string PjRtCompiler::Compile(
-    const std::string_view hlo_proto) {
+    const std::string& protobuf) {
 
     auto status_or_topology = xla::GetCApiTopology(device_name_, device_name_);
     XLA_CHECK(status_or_topology.ok());
 
     std::unique_ptr<xla::PjRtTopologyDescription> topology_desc = std::move(status_or_topology.value());
+    xla::HloModuleProto hlo_proto;
+    hlo_proto.ParseFromString(protobuf);
+
     xla::XlaComputation comp(hlo_proto);
     xla::CompileOptions options;
 
@@ -61,8 +70,8 @@ std::string PjRtCompiler::Compile(
     auto status_or_serial = executable_shared_ptr->SerializeExecutable();
 
     if( !status_or_serial.ok() ) {
-        std::cout << "Serialization of compiled artifacts faield" << std::endl;
-        return 1;
+        std::cout << "Serialization of compiled artifacts failed" << std::endl;
+        return "";
     }
 
     // Serialized compiled bits! Not a cache handle

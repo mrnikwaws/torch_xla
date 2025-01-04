@@ -270,6 +270,7 @@ ptxla_cc_library(
         "//torch_xla/csrc/runtime:util",
         "//torch_xla/csrc/runtime:xla_coordinator",
         "//torch_xla/csrc/runtime:xla_util",
+        "//torch_xla/csrc/aot_compile",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",

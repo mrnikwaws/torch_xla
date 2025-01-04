@@ -70,6 +70,10 @@
 #include "torch_xla/csrc/xla_graph_executor.h"
 #include "torch_xla/csrc/xla_op_builder.h"
 #include "torch_xla/csrc/xla_sharding_util.h"
+
+#include "torch_xla/csrc/aot_compile/aot_compiler.h"
+#include "torch_xla/csrc/aot_compile/aot_model.h"
+
 #include "tsl/platform/env.h"
 #include "tsl/profiler/lib/traceme.h"
 #include "xla/hlo/parser/hlo_parser.h"
@@ -1195,6 +1199,25 @@ class PyLoweringContext {
  private:
   LoweringContext lowering_ctx;
   xla::XlaComputation computation;
+};
+
+void BuildAotCompileSubModule(py::module* m) {
+  py::module aot_compile =
+      m->def_submodule("aot_compile", "AOT compilation and execution");
+
+  py::class_<aot_compile::PjRtCompiler>(aot_compile, "pjrt_compiler")
+    .def(py::init<const std::string&,const std::string&>())
+    .def("compile", 
+      [](aot_compile::PjRtCompiler& self, const std::string& hlo_proto) { 
+        return py::bytes(self.Compile(hlo_proto)); } );
+
+  py::class_<aot_compile::PjRtAotModel>(aot_compile, "pjrt_model")
+    .def(py::init( [](const py::bytes& proto ){
+      std::string str_proto = proto;
+      return new aot_compile::PjRtAotModel(str_proto);
+    } ) )
+    .def("load_parameters", &aot_compile::PjRtAotModel::LoadParameters)
+    .def("forward", &aot_compile::PjRtAotModel::Execute);
 };
 
 // Add a submodule which exposes the LoweringContext to python.
@@ -2678,6 +2701,7 @@ void InitXlaModuleBindings(py::module m) {
 
   BuildProfilerSubmodule(&m);
   BuildLoweringContextSubmodule(&m);
+  BuildAotCompileSubModule(&m);
 
   m.def("_get_tensors_handle",
         [](const std::vector<at::Tensor>& tensors) -> std::vector<int64_t> {

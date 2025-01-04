@@ -17,10 +17,6 @@ cc_library(
     deps = [
         "@xla//xla/pjrt:pjrt_api",
         "@xla//xla/pjrt:pjrt_c_api_client",
-        "@xla//xla/python/pjrt_ifrt:pjrt_ifrt",
-        "@xla//xla/client:client_library",
-        "@xla//xla/service:service",
-        "@xla//xla/stream_executor:stream_executor",
         "//torch_xla/csrc/runtime:runtime",
         "//torch_xla/csrc:tensor",
         "//torch_xla/csrc:aten_cuda_functions",
@@ -30,6 +26,21 @@ cc_library(
         "@torch//:libtorch_cpu",      
         "@torch//:libtorch_python"    
     ]
+)
+
+cc_library(
+    name = "aot_compile",
+    hdrs = [
+        "aot_compiler.h",
+        "aot_model.h"
+    ],
+    srcs = [
+        "aot_compiler.cc",
+        "aot_model.cc"
+    ],
+    deps = [
+        ":xla_local_client",
+    ],
 )
 
 cc_binary(
@@ -42,6 +53,21 @@ cc_binary(
     ],
     includes = [
         "/ansible/src/pytorch/torch/include/torch/csrc/api/include"
+    ],
+    copts = [
+        "-I/usr/local/include/python3.10",
+        "-DTORCH_API_INCLUDE_EXTENSION_H",        
+    ],
+    linkopts = [
+        "-L/usr/local/lib","-lpython3.10", "-lutil",
+    ],
+)
+
+cc_binary(
+    name = "neuron_xla_shared_test",
+    srcs = ["test.cpp" ],
+    deps = [
+        ":aot_compile",   
     ],
     copts = [
         "-I/usr/local/include/python3.10",

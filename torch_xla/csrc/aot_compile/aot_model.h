@@ -4,10 +4,13 @@
 #include <torch/torch.h>
 #include <ATen/ATen.h>
 
+#include "absl/types/span.h"
+
 #include "torch_xla/csrc/xla_backend_impl.h"
 
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace torch_xla {
 
@@ -23,11 +26,11 @@ namespace aot_compile {
 class PjRtAotModel {
 public:
 
-    PjRtAotModel( std::string_view compiled_model );
+    PjRtAotModel( const std::string& compiled_model );
 
-    bool LoadParameters(absl::span<at::Tensor> parameters, absl::span<int> param_ids);
+    bool LoadParameters(std::vector<at::Tensor>& parameters);
 
-    vector<at::Tensor> Execute(absl::span<at::Tensor> args);
+    std::vector<at::Tensor> Execute(const std::vector<at::Tensor>& args);
 
 private:
 
@@ -37,8 +40,6 @@ private:
     std::unique_ptr<torch_xla::runtime::PjRtComputationClient> xla_pjrt_client_;
     std::unique_ptr<torch::lazy::BackendDevice> be_device_;
     torch_xla::runtime::ComputationClient::ComputationPtr computation_ptr_;
-
-    std::vector<at::Tensor> parameters_;
     std::vector<torch::lazy::BackendDataPtr> functional_arguments_;
 };
 

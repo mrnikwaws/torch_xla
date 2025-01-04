@@ -4,6 +4,7 @@
 #include <torch/torch.h>
 #include <ATen/ATen.h>
 
+#include "xla/pjrt/pjrt_c_api_client.h"
 #include "xla/pjrt/pjrt_compiler.h"
 
 #include <string>
@@ -23,7 +24,7 @@ class PjRtCompiler {
 public:
 
     PjRtCompiler( const std::string& device_name, const std::string& pjrt_lib_path );
-    std::string Compile(const std::string_view hlo_proto);
+    std::string Compile(const std::string& hlo_proto);
 
 private:
 
