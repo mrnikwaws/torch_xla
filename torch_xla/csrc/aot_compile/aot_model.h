@@ -11,6 +11,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <mutex>
 
 namespace torch_xla {
 
@@ -28,7 +29,7 @@ public:
 
     PjRtAotModel( const std::string& compiled_model );
 
-    bool LoadParameters(std::vector<at::Tensor>& parameters);
+    bool LoadParameters(const std::vector<at::Tensor>& parameters);
 
     std::vector<at::Tensor> Execute(const std::vector<at::Tensor>& args);
 

@@ -1209,7 +1209,12 @@ void BuildAotCompileSubModule(py::module* m) {
     .def(py::init<const std::string&,const std::string&>())
     .def("compile", 
       [](aot_compile::PjRtCompiler& self, const std::string& hlo_proto) { 
-        return py::bytes(self.Compile(hlo_proto)); } );
+        std::string ser = self.Compile(hlo_proto);
+        if( ser.size() == 0 ) {
+          throw std::runtime_error("AOT compile failed");
+        }
+        return py::bytes(ser);
+      } );
 
   py::class_<aot_compile::PjRtAotModel>(aot_compile, "pjrt_model")
     .def(py::init( [](const py::bytes& proto ){

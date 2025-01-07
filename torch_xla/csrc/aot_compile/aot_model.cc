@@ -8,6 +8,8 @@
 #include "torch_xla/csrc/runtime/pjrt_computation_client.h"
 #include "torch_xla/csrc/tensor_util.h"
 
+#include <sstream>
+
 namespace torch_xla {
 namespace aot_compile {
 
@@ -18,46 +20,48 @@ PjRtAotModel::PjRtAotModel( const std::string& compiled_model ) {
 
 bool 
 PjRtAotModel::LoadParameters(
-    std::vector<at::Tensor>& parameters) {
+    const std::vector<at::Tensor>& parameters) {
 
     functional_arguments_.clear();
     functional_arguments_.reserve(parameters.size());
 
-    // Crashes if an auto ref is used
     for( auto t : parameters ) {
         auto t_xla = t.to(at::Device(at::kXLA)); 
         auto xla_tensor_ptr = torch_xla::bridge::TryGetXlaTensor(t_xla);
-        torch::lazy::BackendDataPtr dataptr = xla_tensor_ptr->GetXlaData();
+        torch::lazy::BackendDataPtr dataptr = std::move(xla_tensor_ptr->GetXlaData());
         functional_arguments_.push_back(dataptr);        
     }
+
+    return true;
 }
 
 std::vector<at::Tensor> 
 PjRtAotModel::Execute(const std::vector<at::Tensor>& aten_inputs) {
     auto start_size = functional_arguments_.size();
 
-    std::vector<at::ScalarType> element_types;
-
     // Add value to me invoked
-    for( auto& t : aten_inputs ) {
+    for( auto t : aten_inputs ) {
         auto t_xla = t.to(at::Device(at::kXLA)); 
         auto xla_tensor_ptr = torch_xla::bridge::TryGetXlaTensor(t_xla);
-        torch::lazy::BackendDataPtr dataptr = xla_tensor_ptr->GetXlaData();
+        torch::lazy::BackendDataPtr dataptr = std::move(xla_tensor_ptr->GetXlaData());
         functional_arguments_.push_back(dataptr);   
-        element_types.push_back(t.scalar_type());     
     }
 
-    auto outputs = backend_->ExecuteComputation( computation_ptr_, functional_arguments_, *be_device_);
-    functional_arguments_.resize(start_size); // Discard args - keep parameters
+    auto results = backend_->ExecuteComputation(computation_ptr_, functional_arguments_, *be_device_);
+    std::vector<at::Tensor> retlist;
 
-    auto aten_tensors = torch_xla::XlaDataToTensors(outputs,element_types);
+    for (const auto& data : results) {
+        XLATensorPtr xla_tensor = torch_xla::XLATensor::Create(data);
+        retlist.push_back(bridge::AtenFromXlaTensor(xla_tensor));
+    }
+
+    functional_arguments_.resize(start_size); // Discard args - keep parameters    
 
     // Since this is a local expect the return value optimizer to optimize
-    return aten_tensors;
+    return retlist;
 }
 
 bool PjRtAotModel::initialize() {
-
     if( !torch_xla::InitXlaBackend() ) {
         VLOG(1) << "Torch XLA Initialization failed!";
         return false;
